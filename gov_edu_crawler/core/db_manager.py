@@ -51,14 +51,19 @@ class DatabaseManager:
             await db.commit()
             return count
 
-    async def get_pending_batch(self, limit=100):
-        """Ambil batch URL yang berstatus 'pending'[cite: 7]."""
+    async def get_pending_batch(self, limit=100, domain_contains=None):
+        """Ambil batch URL yang berstatus 'pending'."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM url_jobs WHERE status = 'pending' LIMIT ?", 
-                (limit,)
-            ) as cursor:
+
+            if domain_contains:
+                query = "SELECT * FROM url_jobs WHERE status = 'pending' AND domain LIKE ? LIMIT ?"
+                params = (f"%{domain_contains}%", limit)
+            else:
+                query = "SELECT * FROM url_jobs WHERE status = 'pending' LIMIT ?"
+                params = (limit,)
+
+            async with db.execute(query, params) as cursor:
                 return await cursor.fetchall()
 
     async def update_status(self, url_hash, status):

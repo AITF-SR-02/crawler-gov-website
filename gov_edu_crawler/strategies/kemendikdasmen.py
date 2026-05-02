@@ -1,43 +1,57 @@
+import re
+from bs4 import BeautifulSoup
 from .base_strategy import BaseStrategy
 
 class KemendikdasmenStrategy(BaseStrategy):
     def __init__(self):
         super().__init__()
-        # Mapping selector berdasarkan subdomain agar efisien
         self.selectors = {
             "vokasi": "div.entry-content",
             "itjen": "div.entry-content",
             "badanbahasa": "div.article_body_wrap",
             "rumahpusbin": "main#main .container",
-            "bskap": 'div[style*="word-break: break-word"]',
-            "main": "div.col-12.col-md-8" # Default untuk kemendikdasmen.go.id
+            "bskap": 'div.col-xl-6 div[style*="word-break: break-word"]',
+            "main": "div.col-12.col-md-8"
         }
 
     def scrape(self, url, html_content):
-        """Menentukan selector berdasarkan subdomain dan mengekstraksi teks."""
-        # 1. Identifikasi subdomain dari URL[cite: 1]
-        target_selector = self.selectors["main"]
+        soup = BeautifulSoup(html_content, 'lxml')
         
-        if "vokasi." in url:
-            target_selector = self.selectors["vokasi"]
-        elif "itjen." in url:
-            target_selector = self.selectors["itjen"]
-        elif "badanbahasa." in url:
-            target_selector = self.selectors["badanbahasa"]
-        elif "rumahpusbin." in url:
-            target_selector = self.selectors["rumahpusbin"]
-        elif "bskap." in url:
-            target_selector = self.selectors["bskap"]
+        if "vokasi." in url: container = soup.select_one(self.selectors["vokasi"])
+        elif "itjen." in url: container = soup.select_one(self.selectors["itjen"])
+        elif "badanbahasa." in url: container = soup.select_one(self.selectors["badanbahasa"])
+        elif "rumahpusbin." in url: container = soup.select_one(self.selectors["rumahpusbin"])
+        elif "bskap." in url: container = soup.select_one(self.selectors["bskap"])
+        else: container = soup.select_one(self.selectors["main"])
 
-        # 2. Ekstraksi teks menggunakan logic universal dari BaseStrategy
-        # Itjen butuh elemen li dan blockquote juga
-        tags = ['p', 'li', 'blockquote'] if "itjen." in url else ['p']
+        if not container: return None
+
+        text_blocks = []
+        is_main = not any(sub in url for sub in ["vokasi.", "itjen.", "badanbahasa.", "rumahpusbin.", "bskap."])
         
-        content = self.extract_clean_text(html_content, target_selector, tags=tags)
-        
-        # 3. Logika khusus Vokasi: Hapus inisial penulis di akhir[cite: 2]
-        if content and "vokasi." in url:
-            import re
-            content = re.sub(r'\s*\([^)]*\)$', '', content)
+        if is_main:
+            for s in container.find_all('strong'):
+                s.decompose()
+            elements_text = container.get_text(separator='\n', strip=True).split('\n')
+        else:
+            tags = ['p', 'li', 'blockquote'] if "itjen." in url else ['p']
+            elements_text = [el.get_text(strip=True) for el in container.find_all(tags) if not el.find('img')]
             
-        return content
+        junk_keywords = ["Biro Komunikasi", "Laman:", "X:", "Instagram:", "#"]
+
+        for i, txt in enumerate(elements_text):
+            txt = txt.strip()
+            # Better footer filtering
+            if any(txt.startswith(x) for x in ["Sumber:", "Penulis:", "Editor:"]): continue
+            if "BKHM" in txt or any(junk in txt for junk in junk_keywords) or not txt: continue
+            
+            if i <= 1: 
+                txt = re.sub(r'^.*?[—–-]\s*', '', txt)
+                txt = re.sub(r'^[–\-\s]+', '', txt)
+
+            if not is_main and i == len(elements_text) - 1 and "vokasi." in url:
+                txt = re.sub(r'\s*\([^)]*\)$', '', txt)
+
+            if len(txt) > 5: text_blocks.append(txt)
+
+        return "\n\n".join(text_blocks)

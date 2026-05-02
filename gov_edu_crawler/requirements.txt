@@ -1,0 +1,6 @@
+
+aiohttp
+aiosqlite
+beautifulsoup4
+lxml
+python-dotenv

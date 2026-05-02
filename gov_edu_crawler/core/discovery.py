@@ -2,94 +2,360 @@ import aiohttp
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import logging
-import asyncio
+import math
+import os
 import random
 
 logger = logging.getLogger("discovery")
 
+
 class Discovery:
     def __init__(self, db_manager):
         self.db = db_manager
-        # Daftar benih (seeds) utama untuk project Sekolah Rakyat
-        self.base_seeds = [
-            ("https://www.kemendikdasmen.go.id/berita", "kemendikdasmen.go.id"),
-            ("https://vokasi.kemendikdasmen.go.id/Publikasi/Berita", "kemendikdasmen.go.id"),
-            ("https://itjen.kemendikdasmen.go.id/web/berita", "kemendikdasmen.go.id"),
-            ("https://badanbahasa.kemendikdasmen.go.id/berita", "kemendikdasmen.go.id"),
-            ("https://bskap.kemendikdasmen.go.id/publikasi", "kemendikdasmen.go.id"),
-            ("https://kemdiktisaintek.go.id/news", "kemdiktisaintek.go.id")
+
+        self.focus = (os.getenv("CRAWLER_FOCUS") or "kemendikdasmen").strip().lower()
+
+        self.forbidden_ext = (
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".zip",
+            ".rar",
+            ".css",
+            ".js",
+        )
+        self.junk_keywords = [
+            "/category/",
+            "/categories/",
+            "/tag/",
+            "/search/",
+            "/author/",
+            "/page/view/",
+            "/laman/",
+            "mailto:",
+            "tel:",
+            "whatsapp:",
+            "/galeri",
+            "?page=",
+            "&size=",
+            "&search="
         ]
-        self.forbidden_ext = ('.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', '.zip', '.rar', '.css', '.js')
-        self.junk_keywords = ['/category/', '/tag/', '/search/', '/author/', 'mailto:', 'tel:', 'whatsapp:']
 
-    async def find_new_links(self, target_batch=150):
-        new_urls_found = []
-        # Jatah per domain agar semua kebagian (Fairness)
-        quota_per_domain = target_batch // len(self.base_seeds)
+        self._odoo_cursor = {}
+        self.seeds_config = self._build_seeds_config(self.focus)
 
-        async with aiohttp.ClientSession(headers={"User-Agent": "AITF-SR-02-DeepScout/9.0"}) as session:
-            logger.info("🔍 Memulai pencarian di 'Lahan Baru' (Arsip Page 100+)...")
+    def _build_seeds_config(self, focus: str):
+        all_seeds = [
+            {
+                "type": "odoo_search",
+                "name": "kemendikdasmen_siaran_pers",
+                "group": "kemendikdasmen",
+                "base_url": "https://www.kemendikdasmen.go.id",
+                "section": "siaran-pers",
+                "domain": "kemendikdasmen.go.id",
+                "max_p": 468,
+                "limit": 10,
+                "pages_per_run": 3,
+            },
+            {
+                "type": "odoo_search",
+                "name": "kemendikdasmen_pengumuman",
+                "group": "kemendikdasmen",
+                "base_url": "https://www.kemendikdasmen.go.id",
+                "section": "pengumuman",
+                "domain": "kemendikdasmen.go.id",
+                "max_p": 36,
+                "limit": 10,
+                "pages_per_run": 2,
+            },
+            {
+                "type": "html",
+                "name": "vokasi_berita",
+                "group": "kemendikdasmen",
+                "url": "https://vokasi.kemendikdasmen.go.id/Publikasi/Berita",
+                "domain": "vokasi.kemendikdasmen.go.id",
+                "max_p": 150,
+                "page_format": "{base}/{page}",
+            },
+            {
+                "type": "html",
+                "name": "itjen_berita",
+                "group": "kemendikdasmen",
+                "url": "https://itjen.kemendikdasmen.go.id/web/berita",
+                "domain": "itjen.kemendikdasmen.go.id",
+                "max_p": 100,
+                "page_format": "{base}/page/{page}/",
+            },
+            {
+                "type": "html",
+                "name": "bskap_publikasi",
+                "group": "kemendikdasmen",
+                "url": "https://bskap.kemendikdasmen.go.id/publikasi",
+                "domain": "bskap.kemendikdasmen.go.id",
+                "max_p": 50,
+                "page_format": "{base}?page={page}",
+            },
+            {
+                "type": "html",
+                "name": "rumahpusbin_berita",
+                "group": "kemendikdasmen",
+                "url": "https://rumahpusbin.kemendikdasmen.go.id/berita.php",
+                "domain": "rumahpusbin.kemendikdasmen.go.id",
+                "max_p": 20,
+                "page_format": "{base}?page={page}",
+            },
+            {
+                "type": "html",
+                "name": "badanbahasa_berita",
+                "group": "kemendikdasmen",
+                "url": "https://badanbahasa.kemendikdasmen.go.id/berita",
+                "domain": "badanbahasa.kemendikdasmen.go.id",
+                "max_p": 1,
+                "page_format": "{base}",
+            },
+            {
+                "type": "html",
+                "name": "kemdiktisaintek_news",
+                "group": "kemdiktisaintek",
+                "url": "https://kemdiktisaintek.go.id/news",
+                "domain": "kemdiktisaintek.go.id",
+                "max_p": 1000,
+                "page_format": "{base}?page={page}",
+            },
+            {
+                "type": "html",
+                "name": "kemensos_berita",
+                "group": "kemensos",
+                "url": "https://kemensos.go.id/berita-terkini",
+                "domain": "kemensos.go.id",
+                "max_p": 300,
+                "page_format": "{base}/Sekolah-Rakyat/{page}",
+            },
+        ]
+
+        if focus in {"all", "*"}:
+            return all_seeds
+
+        selected_seeds = []
+        focus_parts = [p.strip() for p in focus.replace(",", " ").split()]
+        
+        for p in focus_parts:
+            if p in {"kemdikdasmen", "kemendikdasmen", "dikdasmen"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "kemendikdasmen"])
+            elif p in {"kemdiktisaintek", "saintek", "diktisaintek", "kemendiktisanitek"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "kemdiktisaintek"])
+            elif p in {"kemensos"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "kemensos"])
+
+        unique_seeds = []
+        for s in selected_seeds:
+            if s not in unique_seeds:
+                unique_seeds.append(s)
+
+        if unique_seeds:
+            return unique_seeds
+
+        logger.warning(f"⚠️ CRAWLER_FOCUS='{focus}' tidak dikenal. Fallback ke 'all'.")
+        return all_seeds
+
+    def _is_allowed(self, url: str, domain: str) -> bool:
+        url_low = url.lower()
+        return (
+            url_low.startswith("http")
+            and domain in url_low
+            and not url_low.endswith(self.forbidden_ext)
+            and not any(k in url_low for k in self.junk_keywords)
+        )
+
+    async def _discover_odoo_search(self, session: aiohttp.ClientSession, seed: dict, quota: int) -> int:
+        key = seed["name"]
+        base_url = seed["base_url"].rstrip("/")
+        section = seed["section"]
+        api_url = f"{base_url}/pencarian/{section}/search"
+
+        limit = int(seed.get("limit") or 10)
+        max_p = int(seed.get("max_p") or 1)
+        pages_per_run = int(seed.get("pages_per_run") or 1)
+
+        start_page = int(self._odoo_cursor.get(key, 1))
+        if start_page < 1 or start_page > max_p:
+            start_page = 1
+
+        added = 0
+        for offset in range(pages_per_run):
+            if added >= quota:
+                break
+
+            page = start_page + offset
+            if page > max_p:
+                break
+
+            payload = {
+                "jsonrpc": "2.0",
+                "method": "call",
+                "params": {
+                    "keyword": "",
+                    "sort_order": "terbaru",
+                    "kategori": [],
+                    "kelompok": [],
+                    "tagging": "",
+                    "pengguna": [],
+                    "tahun": [],
+                    "page": page,
+                    "limit": limit,
+                    "csrf_token": "",
+                },
+                "id": 1,
+            }
+
+            try:
+                async with session.post(
+                    api_url,
+                    json=payload,
+                    timeout=35,
+                    headers={
+                        "Accept": "application/json, text/javascript, */*; q=0.01",
+                        "Content-Type": "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                ) as response:
+                    if response.status != 200:
+                        break
+                    data = await response.json(content_type=None)
+            except Exception:
+                break
+
+            result = data.get("result") or {}
+            results = result.get("results") or []
+            if not results:
+                break
+
+            total_count = result.get("total_count")
+            if isinstance(total_count, int) and total_count > 0:
+                computed_max = max(1, math.ceil(total_count / limit))
+                seed["max_p"] = max(seed.get("max_p", 1), computed_max)
+                max_p = seed["max_p"]
+
+            urls_to_add = []
+            for item in results:
+                path = item.get("url")
+                if not path:
+                    continue
+                full_url = urljoin(base_url + "/", path)
+                if self._is_allowed(full_url, seed["domain"]):
+                    urls_to_add.append((full_url, seed["domain"]))
+
+            if not urls_to_add:
+                continue
+
+            inserted = await self.db.add_urls(urls_to_add)
+            added += inserted
+
+        next_page = start_page + pages_per_run
+        if next_page > max_p:
+            next_page = 1
+        self._odoo_cursor[key] = next_page
+        return added
+
+    async def _discover_html(self, session: aiohttp.ClientSession, seed: dict, quota: int) -> int:
+        base_url = seed["url"]
+        domain = seed["domain"]
+        max_p = int(seed.get("max_p") or 1)
+        page_format = seed.get("page_format") or "{base}?page={page}"
+
+        added = 0
+        start_page = 1 if max_p <= 1 else random.randint(1, max_p)
+
+        for page in range(start_page, start_page + 10):
+            if added >= quota:
+                break
+            if page > max_p:
+                break
+
+            current_seed = page_format.format(base=base_url, page=page)
+            try:
+                async with session.get(current_seed, timeout=20) as response:
+                    if response.status != 200:
+                        break
+                    soup = BeautifulSoup(await response.text(), "lxml")
+            except Exception:
+                continue
+
+            candidates = []
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if href.startswith("#") or href.startswith("javascript:"):
+                    continue
+
+                if any(x in href for x in ["?p=", "?id=", "berita_detail", "?page="]):
+                    full_url = urljoin(base_url, href).split("#")[0]
+                else:
+                    full_url = urljoin(base_url, href).split("#")[0].split("?")[0]
+
+                if self._is_allowed(full_url, domain):
+                    candidates.append((full_url, domain))
+
+            if not candidates:
+                if page >= start_page + 2:
+                    break
+                continue
+
+            inserted = await self.db.add_urls(candidates)
+            added += inserted
+
+        return added
+
+    async def find_new_links(self, target_batch: int = 150) -> int:
+        if not self.seeds_config:
+            return 0
+
+        groups = []
+        for s in self.seeds_config:
+            g = s.get("group")
+            if g and g not in groups:
+                groups.append(g)
+
+        if not hasattr(self, 'current_group_idx'):
+            self.current_group_idx = 0
             
-            # Acak urutan domain biar gak bosen di satu tempat
-            random.shuffle(self.base_seeds)
-            
-            for base_url, domain in self.base_seeds:
-                if len(new_urls_found) >= target_batch: break
-                
-                domain_count = 0
-                # LONCAT JAUH: Kita cari dari halaman 100 sampai 1000 untuk bongkar arsip lama
-                start_page = random.randint(100, 1000) 
-                logger.info(f"🔎 {domain}: Membongkar arsip mulai dari Page {start_page}...")
+        if groups:
+            current_group = groups[self.current_group_idx % len(groups)]
+            self.current_group_idx += 1
+            active_seeds = [s for s in self.seeds_config if s.get("group") == current_group]
+        else:
+            current_group = "unknown"
+            active_seeds = self.seeds_config
 
-                for page in range(start_page, start_page + 20):
-                    if domain_count >= quota_per_domain: break
-                    
-                    # Kalibrasi parameter pagination sesuai struktur web masing-masing
-                    if "vokasi" in base_url: 
-                        current_seed = f"{base_url}/{page}"
-                    elif "itjen" in base_url: 
-                        current_seed = f"{base_url}/page/{page}/"
-                    elif "kemdiktisaintek" in base_url or "badanbahasa" in base_url:
-                        current_seed = f"{base_url}?page={page}"
-                    else: 
-                        # Default untuk kemendikdasmen.go.id
-                        current_seed = f"{base_url}?p={page}"
+        total_added = 0
+        quota_per_seed = max(1, target_batch // len(active_seeds))
 
-                    try:
-                        async with session.get(current_seed, timeout=15) as response:
-                            # Jika 404, berarti halaman arsip sudah mentok, pindah domain
-                            if response.status == 404: 
-                                logger.info(f"⏹️ {domain} mentok di Page {page}.")
-                                break
-                            if response.status != 200: continue
-                            
-                            soup = BeautifulSoup(await response.text(), "lxml")
-                            found_in_page = 0
-                            
-                            for a in soup.find_all('a', href=True):
-                                # Bersihkan URL dari fragment (#) dan query string (?)
-                                full_url = urljoin(base_url, a['href']).split('#')[0].split('?')[0]
-                                url_low = full_url.lower()
-                                
-                                # Filter domain dan ekstensi file sampah
-                                if (url_low.startswith('http') and domain in url_low and 
-                                    not url_low.endswith(self.forbidden_ext) and
-                                    not any(k in url_low for k in self.junk_keywords)):
-                                    
-                                    # Simpan ke database dan cek apakah ini barang baru
-                                    is_new = await self.db.add_urls([(full_url, domain)])
-                                    if is_new > 0:
-                                        new_urls_found.append(full_url)
-                                        domain_count += 1
-                                        found_in_page += 1
-                                        if domain_count >= quota_per_domain: break
-                            
-                            # Smart Break: Jika satu halaman isinya duplikat semua, jangan dipaksa lanjut
-                            if found_in_page == 0 and page > start_page + 3: 
-                                break 
-                    except Exception as e:
-                        continue
-                
-                logger.info(f"✨ {domain}: Berhasil dapet {domain_count} URL baru.")
+        async with aiohttp.ClientSession(headers={"User-Agent": "AITF-SR-02-DeepScout/12.0"}) as session:
+            logger.info(f"🔍 Discovery start (focus={self.focus}, active_group={current_group}, seeds={len(active_seeds)})")
 
-        return len(new_urls_found)
+            if self.focus in {"all", "*"}:
+                random.shuffle(active_seeds)
+
+            for seed in active_seeds:
+                if total_added >= target_batch:
+                    break
+
+                quota = min(quota_per_seed, target_batch - total_added)
+                try:
+                    if seed.get("type") == "odoo_search":
+                        added = await self._discover_odoo_search(session, seed, quota)
+                        label = f"{seed['base_url']}/pencarian/{seed['section']}"
+                    else:
+                        added = await self._discover_html(session, seed, quota)
+                        label = seed.get("url")
+                except Exception:
+                    added = 0
+                    label = seed.get("url") or seed.get("name")
+
+                total_added += added
+                logger.info(f"✨ {label}: Dapet {added} URL baru.")
+
+        return total_added

@@ -1,5 +1,11 @@
 import asyncio
 import logging
+import os
+from dotenv import load_dotenv
+
+# Load env file
+load_dotenv()
+
 from core.db_manager import DatabaseManager
 from core.discovery import Discovery
 from core.scraper import Scraper
@@ -11,10 +17,10 @@ async def run_prod(db, discovery, scraper):
     while True:
         try:
             logger.info("🔍 Tahap Discovery: Mencari URL baru...")
-            found = await discovery.find_new_links(target_batch=150)
+            found = await discovery.find_new_links(target_batch=300)
             
             logger.info(f"🚜 Tahap Scraping: Memproses {found} URL baru...")
-            success_count = await scraper.run_batch(batch_size=30)
+            success_count = await scraper.run_batch(batch_size=100)
             
             stats = await db.get_stats()
             logger.info(f"📊 Hasil batch: {success_count} disimpan. Total Global: {stats.get('completed', 0)}")
@@ -24,8 +30,8 @@ async def run_prod(db, discovery, scraper):
                 logger.warning("⚠️ Batch berisi duplikat. Lanjut cari lagi...")
                 await asyncio.sleep(5)
             elif success_count == 0 and found == 0:
-                logger.warning("😴 Arsip atau Sitemap habis. Istirahat 5 menit...")
-                await asyncio.sleep(60)
+                logger.warning("😴 Arsip atau Sitemap habis. Istirahat 10 detik...")
+                await asyncio.sleep(10)
             else:
                 await asyncio.sleep(15)
 
