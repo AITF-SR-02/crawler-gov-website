@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+data/*.sqlite3
+data/*.sqlite3-shm
+data/*.sqlite3-wal
+data/raw/*.jsonl
+.env
+.idea/
+.vscode/
