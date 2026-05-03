@@ -5,46 +5,23 @@ import logging
 import math
 import os
 import random
+import asyncio
+from playwright.async_api import async_playwright
 
 logger = logging.getLogger("discovery")
-
 
 class Discovery:
     def __init__(self, db_manager):
         self.db = db_manager
-
         self.focus = (os.getenv("CRAWLER_FOCUS") or "kemendikdasmen").strip().lower()
-
         self.forbidden_ext = (
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".gif",
-            ".pdf",
-            ".doc",
-            ".docx",
-            ".zip",
-            ".rar",
-            ".css",
-            ".js",
+            ".jpg", ".jpeg", ".png", ".gif", ".pdf", ".doc", ".docx", 
+            ".zip", ".rar", ".css", ".js",
         )
         self.junk_keywords = [
-            "/category/",
-            "/categories/",
-            "/tag/",
-            "/search/",
-            "/author/",
-            "/page/view/",
-            "/laman/",
-            "mailto:",
-            "tel:",
-            "whatsapp:",
-            "/galeri",
-            "?page=",
-            "&size=",
-            "&search="
+            "/author/", "mailto:", "tel:", "whatsapp:", 
+            "/galeri"
         ]
-
         self._odoo_cursor = {}
         self.seeds_config = self._build_seeds_config(self.focus)
 
@@ -145,17 +122,15 @@ class Discovery:
                 "page_format": "{base}?page={page}",
                 "route_key": "route",
             },
-            # --- Kemenag ---
             {
                 "type": "html",
                 "name": "kemenag_search",
                 "group": "kemenag",
                 "url": "https://kemenag.go.id/search",
                 "domain": "kemenag.go.id",
-                "max_p": 500,
+                "max_p": 900,
                 "page_format": "{base}?q=&page={page}",
             },
-            # --- Indonesia Kaya ---
             {
                 "type": "html",
                 "name": "indonesiakaya_kesenian",
@@ -192,7 +167,6 @@ class Discovery:
                 "max_p": 50,
                 "page_format": "{base}/page/{page}/",
             },
-            # --- Perpusnas ---
             {
                 "type": "html",
                 "name": "perpusnas_berita",
@@ -202,27 +176,25 @@ class Discovery:
                 "max_p": 100,
                 "page_format": "{base}/page/{page}",
             },
-            # --- LPDP ---
+            # --- LPDP MODIFIED FOR PLAYWRIGHT ---
             {
-                "type": "html",
+                "type": "playwright",
                 "name": "lpdp_berita",
                 "group": "lpdp",
                 "url": "https://lpdp.kemenkeu.go.id/informasi/berita",
                 "domain": "lpdp.kemenkeu.go.id",
                 "max_p": 50,
-                "page_format": "{base}?page={page}",
+                "page_format": "{base}/?page={page}",
             },
-            # --- Indonesia.go.id ---
             {
                 "type": "html",
                 "name": "indonesiagoid_nasional",
                 "group": "indonesiagoid",
                 "url": "https://indonesia.go.id/informasi/nasional",
                 "domain": "indonesia.go.id",
-                "max_p": 200,
+                "max_p": 1000,
                 "page_format": "{base}?page={page}",
             },
-            # --- Wonderful Indonesia (indonesia.travel) ---
             {
                 "type": "html",
                 "name": "indotravel_culture",
@@ -250,7 +222,6 @@ class Discovery:
                 "max_p": 50,
                 "page_format": "{base}?page={page}",
             },
-            # --- Wonderful Indonesia (wonderfulindonesia.co.id) ---
             {
                 "type": "html",
                 "name": "wonderfulcoid_all",
@@ -260,8 +231,9 @@ class Discovery:
                 "max_p": 14,
                 "page_format": "{base}/page/{page}/",
             },
+            # --- BRIN (SPA) MODIFIED FOR PLAYWRIGHT ---
             {
-                "type": "html",
+                "type": "playwright",
                 "name": "brin_news",
                 "group": "brin",
                 "url": "https://brin.go.id/news",
@@ -459,6 +431,65 @@ class Discovery:
 
         return added
 
+    async def _discover_playwright(self, seed: dict, quota: int) -> int:
+        """Fungsi baru: Menarik link dari website SPA seperti LPDP & BRIN"""
+        base_url = seed["url"]
+        domain = seed["domain"]
+        max_p = int(seed.get("max_p") or 1)
+        page_format = seed.get("page_format") or "{base}?page={page}"
+
+        added = 0
+        start_page = 1 if max_p <= 1 else random.randint(1, max_p)
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(user_agent="AITF-SR-02-DeepScout/12.0")
+                page_instance = await context.new_page()
+
+                for page_num in range(start_page, start_page + 10):
+                    if added >= quota or page_num > max_p:
+                        break
+
+                    current_seed = page_format.format(base=base_url, page=page_num)
+                    logger.info(f"🎭 [DISCOVERY] Playwright fetching SPA seed: {current_seed}")
+                    
+                    try:
+                        await page_instance.goto(current_seed, wait_until="networkidle", timeout=45000)
+                        await asyncio.sleep(3) # Tunggu rendering selesai
+                        html = await page_instance.content()
+                        soup = BeautifulSoup(html, "lxml")
+                    except Exception as e:
+                        logger.error(f"🎭 Playwright error di {current_seed}: {str(e)[:50]}")
+                        continue
+
+                    candidates = []
+                    for a in soup.find_all("a", href=True):
+                        href = a["href"]
+                        if href.startswith("#") or href.startswith("javascript:"):
+                            continue
+                        if any(x in href for x in ["?p=", "?id=", "berita_detail", "?page="]):
+                            full_url = urljoin(base_url, href).split("#")[0]
+                        else:
+                            full_url = urljoin(base_url, href).split("#")[0].split("?")[0]
+
+                        if self._is_allowed(full_url, domain):
+                            candidates.append((full_url, domain))
+
+                    if not candidates:
+                        if page_num >= start_page + 2:
+                            break
+                        continue
+
+                    inserted = await self.db.add_urls(candidates)
+                    added += inserted
+
+                await browser.close()
+        except Exception as e:
+            logger.error(f"Gagal inisiasi Playwright di Discovery: {e}")
+            
+        return added
+
     async def _discover_api(self, session, seed, quota):
         """Discovery via paginated JSON API (Puspresnas)."""
         base_url = seed["url"]
@@ -482,7 +513,6 @@ class Discovery:
             except Exception:
                 continue
 
-            # The API returns a paginated object; items are in 'data' key
             items = data.get("data", data) if isinstance(data, dict) else data
             if not isinstance(items, list):
                 continue
@@ -544,6 +574,10 @@ class Discovery:
                         label = f"{seed['base_url']}/pencarian/{seed['section']}"
                     elif seed.get("type") == "api_json":
                         added = await self._discover_api(session, seed, quota)
+                        label = seed.get("url")
+                    elif seed.get("type") == "playwright":
+                        # ROUTING BARU UNTUK SPA (LPDP, BRIN)
+                        added = await self._discover_playwright(seed, quota)
                         label = seed.get("url")
                     else:
                         added = await self._discover_html(session, seed, quota)
