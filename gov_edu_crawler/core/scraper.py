@@ -7,6 +7,15 @@ from datetime import datetime
 from strategies.kemendikdasmen import KemendikdasmenStrategy
 from strategies.kemdiktisaintek import KemdiktisaintekStrategy
 from strategies.kemensos import KemensosStrategy
+from strategies.inertia_engine import InertiaEngineStrategy
+from strategies.kemenag import KemenagStrategy
+from strategies.indonesia_kaya import IndonesiaKayaStrategy
+from strategies.perpusnas import PerpusnasStrategy
+from strategies.lpdp import LpdpStrategy
+from strategies.indonesia_go import IndonesiaGoStrategy
+from strategies.indonesia_travel import IndonesiaTravelStrategy
+from strategies.wonderful_indonesia import WonderfulIndonesiaStrategy
+from strategies.brin import BrinStrategy
 
 logger = logging.getLogger("scraper")
 
@@ -16,13 +25,26 @@ class Scraper:
         self.output_path = output_path
         self.focus = (os.getenv("CRAWLER_FOCUS") or "kemendikdasmen").strip().lower()
         self.strategy_map = {
+            "pusatprestasinasional.kemendikdasmen.go.id": InertiaEngineStrategy(),
             "kemendikdasmen.go.id": KemendikdasmenStrategy(),
             "kemdiktisaintek.go.id": KemdiktisaintekStrategy(),
-            "kemensos.go.id": KemensosStrategy()
+            "kemensos.go.id": KemensosStrategy(),
+            "kemenag.go.id": KemenagStrategy(),
+            "indonesiakaya.com": IndonesiaKayaStrategy(),
+            "perpusnas.go.id": PerpusnasStrategy(),
+            "lpdp.kemenkeu.go.id": LpdpStrategy(),
+            "indonesia.go.id": IndonesiaGoStrategy(),
+            "indonesia.travel": IndonesiaTravelStrategy(),
+            "wonderfulindonesia.co.id": WonderfulIndonesiaStrategy(),
+            "brin.go.id": BrinStrategy(),
         }
 
     def _domain_filter(self):
+        # Support comma-separated focus
         if self.focus in {"all", "*"}:
+            return None
+        # Return None to scrape all domains when multiple targets
+        if "," in self.focus:
             return None
         if self.focus in {"kemdikdasmen", "kemendikdasmen", "dikdasmen"}:
             return "kemendikdasmen.go.id"
@@ -30,6 +52,8 @@ class Scraper:
             return "kemdiktisaintek.go.id"
         if self.focus in {"kemensos"}:
             return "kemensos.go.id"
+        if self.focus in {"puspresnas", "pusatprestasinasional"}:
+            return "pusatprestasinasional.kemendikdasmen.go.id"
         return None
 
     async def process_url(self, session, row):
@@ -37,13 +61,14 @@ class Scraper:
         # Biar lu bisa liat URL apa yang diproses[cite: 1]
         logger.info(f"🚜 Scraping: {url}") 
         
-        strategy = next((s for d, s in self.strategy_map.items() if d in url), None)
+        # Sort by domain length (longest first) so subdomains match before parent
+        strategy = next((s for d, s in sorted(self.strategy_map.items(), key=lambda x: -len(x[0])) if d in url), None)
         if not strategy: 
             await self.db.update_status(url_hash, 'err_no_strategy')
             return False
 
         try:
-            async with session.get(url, timeout=25) as response:
+            async with session.get(url, timeout=60) as response:
                 if response.status != 200: 
                     await self.db.update_status(url_hash, f'err_{response.status}')
                     return False
@@ -73,8 +98,8 @@ class Scraper:
         async with aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(ssl=False),
             headers={"User-Agent": "AITF-SR-02-Crawler/12.0"},
-            max_field_size=32768, 
-            max_line_size=32768
+            max_field_size=16 * 1024 * 1024,  # 16MB - Puspresnas pages can be 8MB+
+            max_line_size=16 * 1024 * 1024
         ) as session:
             tasks = [self.process_url(session, job) for job in pending_jobs]
             results = await asyncio.gather(*tasks)

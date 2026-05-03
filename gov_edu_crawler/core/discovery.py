@@ -135,6 +135,140 @@ class Discovery:
                 "max_p": 300,
                 "page_format": "{base}/Sekolah-Rakyat/{page}",
             },
+            {
+                "type": "api_json",
+                "name": "puspresnas_wara_wara",
+                "group": "puspresnas",
+                "url": "https://pusatprestasinasional.kemendikdasmen.go.id/api/news",
+                "domain": "pusatprestasinasional.kemendikdasmen.go.id",
+                "max_p": 145,
+                "page_format": "{base}?page={page}",
+                "route_key": "route",
+            },
+            # --- Kemenag ---
+            {
+                "type": "html",
+                "name": "kemenag_search",
+                "group": "kemenag",
+                "url": "https://kemenag.go.id/search",
+                "domain": "kemenag.go.id",
+                "max_p": 500,
+                "page_format": "{base}?q=&page={page}",
+            },
+            # --- Indonesia Kaya ---
+            {
+                "type": "html",
+                "name": "indonesiakaya_kesenian",
+                "group": "indonesiakaya",
+                "url": "https://indonesiakaya.com/pustaka-indonesia-category/kesenian",
+                "domain": "indonesiakaya.com",
+                "max_p": 50,
+                "page_format": "{base}/page/{page}/",
+            },
+            {
+                "type": "html",
+                "name": "indonesiakaya_tradisi",
+                "group": "indonesiakaya",
+                "url": "https://indonesiakaya.com/pustaka-indonesia-category/tradisi",
+                "domain": "indonesiakaya.com",
+                "max_p": 50,
+                "page_format": "{base}/page/{page}/",
+            },
+            {
+                "type": "html",
+                "name": "indonesiakaya_pariwisata",
+                "group": "indonesiakaya",
+                "url": "https://indonesiakaya.com/pustaka-indonesia-category/pariwisata",
+                "domain": "indonesiakaya.com",
+                "max_p": 50,
+                "page_format": "{base}/page/{page}/",
+            },
+            {
+                "type": "html",
+                "name": "indonesiakaya_kuliner",
+                "group": "indonesiakaya",
+                "url": "https://indonesiakaya.com/pustaka-indonesia-category/kuliner",
+                "domain": "indonesiakaya.com",
+                "max_p": 50,
+                "page_format": "{base}/page/{page}/",
+            },
+            # --- Perpusnas ---
+            {
+                "type": "html",
+                "name": "perpusnas_berita",
+                "group": "perpusnas",
+                "url": "https://perpusnas.go.id/berita",
+                "domain": "perpusnas.go.id",
+                "max_p": 100,
+                "page_format": "{base}/page/{page}",
+            },
+            # --- LPDP ---
+            {
+                "type": "html",
+                "name": "lpdp_berita",
+                "group": "lpdp",
+                "url": "https://lpdp.kemenkeu.go.id/informasi/berita",
+                "domain": "lpdp.kemenkeu.go.id",
+                "max_p": 50,
+                "page_format": "{base}?page={page}",
+            },
+            # --- Indonesia.go.id ---
+            {
+                "type": "html",
+                "name": "indonesiagoid_nasional",
+                "group": "indonesiagoid",
+                "url": "https://indonesia.go.id/informasi/nasional",
+                "domain": "indonesia.go.id",
+                "max_p": 200,
+                "page_format": "{base}?page={page}",
+            },
+            # --- Wonderful Indonesia (indonesia.travel) ---
+            {
+                "type": "html",
+                "name": "indotravel_culture",
+                "group": "wonderful",
+                "url": "https://www.indonesia.travel/id/id/travel-ideas/culture",
+                "domain": "indonesia.travel",
+                "max_p": 50,
+                "page_format": "{base}?page={page}",
+            },
+            {
+                "type": "html",
+                "name": "indotravel_nature",
+                "group": "wonderful",
+                "url": "https://www.indonesia.travel/id/id/travel-ideas/nature-adventure",
+                "domain": "indonesia.travel",
+                "max_p": 50,
+                "page_format": "{base}?page={page}",
+            },
+            {
+                "type": "html",
+                "name": "indotravel_culinary",
+                "group": "wonderful",
+                "url": "https://www.indonesia.travel/id/id/travel-ideas/culinary-shopping",
+                "domain": "indonesia.travel",
+                "max_p": 50,
+                "page_format": "{base}?page={page}",
+            },
+            # --- Wonderful Indonesia (wonderfulindonesia.co.id) ---
+            {
+                "type": "html",
+                "name": "wonderfulcoid_all",
+                "group": "wonderful",
+                "url": "https://wonderfulindonesia.co.id/all-posts",
+                "domain": "wonderfulindonesia.co.id",
+                "max_p": 14,
+                "page_format": "{base}/page/{page}/",
+            },
+            {
+                "type": "html",
+                "name": "brin_news",
+                "group": "brin",
+                "url": "https://brin.go.id/news",
+                "domain": "brin.go.id",
+                "max_p": 1,
+                "page_format": "{base}",
+            },
         ]
 
         if focus in {"all", "*"}:
@@ -150,6 +284,22 @@ class Discovery:
                 selected_seeds.extend([s for s in all_seeds if s.get("group") == "kemdiktisaintek"])
             elif p in {"kemensos"}:
                 selected_seeds.extend([s for s in all_seeds if s.get("group") == "kemensos"])
+            elif p in {"puspresnas", "pusatprestasinasional"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "puspresnas"])
+            elif p in {"kemenag"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "kemenag"])
+            elif p in {"indonesiakaya", "indonesia_kaya"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "indonesiakaya"])
+            elif p in {"perpusnas"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "perpusnas"])
+            elif p in {"lpdp"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "lpdp"])
+            elif p in {"indonesiagoid", "indonesia_go", "indonesia.go.id"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "indonesiagoid"])
+            elif p in {"wonderful", "wonderfulindonesia", "indonesia_travel"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "wonderful"])
+            elif p in {"brin"}:
+                selected_seeds.extend([s for s in all_seeds if s.get("group") == "brin"])
 
         unique_seeds = []
         for s in selected_seeds:
@@ -309,6 +459,50 @@ class Discovery:
 
         return added
 
+    async def _discover_api(self, session, seed, quota):
+        """Discovery via paginated JSON API (Puspresnas)."""
+        base_url = seed["url"]
+        domain = seed["domain"]
+        max_p = seed.get("max_p", 50)
+        page_format = seed.get("page_format", "{base}?page={page}")
+        route_key = seed.get("route_key", "route")
+        added = 0
+        start_page = random.randint(1, max_p)
+
+        for page in range(start_page, start_page + 10):
+            if added >= quota or page > max_p:
+                break
+
+            api_url = page_format.format(base=base_url, page=page)
+            try:
+                async with session.get(api_url, timeout=20) as response:
+                    if response.status != 200:
+                        break
+                    data = await response.json(content_type=None)
+            except Exception:
+                continue
+
+            # The API returns a paginated object; items are in 'data' key
+            items = data.get("data", data) if isinstance(data, dict) else data
+            if not isinstance(items, list):
+                continue
+
+            candidates = []
+            for item in items:
+                route = item.get(route_key, "")
+                if route and domain in route:
+                    candidates.append((route.split("#")[0].split("?")[0], domain))
+
+            if not candidates:
+                if page >= start_page + 2:
+                    break
+                continue
+
+            inserted = await self.db.add_urls(candidates)
+            added += inserted
+
+        return added
+
     async def find_new_links(self, target_batch: int = 150) -> int:
         if not self.seeds_config:
             return 0
@@ -348,6 +542,9 @@ class Discovery:
                     if seed.get("type") == "odoo_search":
                         added = await self._discover_odoo_search(session, seed, quota)
                         label = f"{seed['base_url']}/pencarian/{seed['section']}"
+                    elif seed.get("type") == "api_json":
+                        added = await self._discover_api(session, seed, quota)
+                        label = seed.get("url")
                     else:
                         added = await self._discover_html(session, seed, quota)
                         label = seed.get("url")

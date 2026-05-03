@@ -20,7 +20,7 @@ async def run_prod(db, discovery, scraper):
             found = await discovery.find_new_links(target_batch=300)
             
             logger.info(f"🚜 Tahap Scraping: Memproses {found} URL baru...")
-            success_count = await scraper.run_batch(batch_size=100)
+            success_count = await scraper.run_batch(batch_size=30)
             
             stats = await db.get_stats()
             logger.info(f"📊 Hasil batch: {success_count} disimpan. Total Global: {stats.get('completed', 0)}")

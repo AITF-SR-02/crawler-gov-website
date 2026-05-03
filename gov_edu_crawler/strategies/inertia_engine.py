@@ -10,26 +10,36 @@ logger = logging.getLogger("inertia_engine")
 class InertiaEngineStrategy(BaseStrategy):
     def __init__(self):
         super().__init__()
+        # Regex to extract data-page attribute directly from raw HTML
+        # This bypasses BeautifulSoup which truncates massive attributes
+        self._data_page_re = re.compile(r'<div\s+id="app"\s+data-page="(.*?)"', re.DOTALL)
 
     def scrape(self, url, html_content):
         """
         Strategi Khusus Puspresnas & BBGTK Berbasis Inertia.js.
         Data ditemukan di div#app atribut data-page.
+        Uses regex extraction to handle massive (8MB+) data-page attributes
+        that BeautifulSoup/lxml would truncate.
         """
-        soup = BeautifulSoup(html_content, "lxml")
-        app_div = soup.select_one("div#app")
-        
-        if not app_div or not app_div.has_attr('data-page'):
-            return None
-
         try:
-            # 1. Ambil JSON mentah
-            # BeautifulSoup otomatis men-decode &quot; menjadi "
-            page_data = json.loads(app_div['data-page'])
+            # 1. Extract data-page using regex (bypass BeautifulSoup for huge attributes)
+            match = self._data_page_re.search(html_content)
+            if not match:
+                return None
+
+            raw_json = match.group(1)
+            if not raw_json:
+                return None
+
+            # 2. Decode HTML entities in JSON (&quot; -> ", &amp; -> &, etc.)
+            decoded_json = html.unescape(raw_json)
+
+            # 3. Parse JSON
+            page_data = json.loads(decoded_json)
             props = page_data.get('props', {})
             
             raw_html = ""
-            # 2. Navigasi Path Sesuai Struktur HTML Puspresnas
+            # 4. Navigate structure based on domain
             if "pusatprestasinasional" in url:
                 # Struktur: props -> data -> detail
                 raw_html = props.get('data', {}).get('detail', "")
@@ -40,10 +50,10 @@ class InertiaEngineStrategy(BaseStrategy):
             if not raw_html:
                 return None
 
-            # 3. Decode HTML Entity (&lt;p&gt; -> <p>)
+            # 5. Decode HTML Entity (<p> -> <p>)
             decoded_html = html.unescape(raw_html)
             
-            # 4. Ekstraksi dan Pembersihan Teks
+            # 6. Extract and clean text
             return self.extract_and_clean(decoded_html)
 
         except Exception as e:
@@ -59,20 +69,19 @@ class InertiaEngineStrategy(BaseStrategy):
             img.decompose()
 
         paragraphs = []
-        # Ambil teks dari p, li, dan span[cite: 1]
-        for element in soup.find_all(['p', 'li', 'span']):
+        for element in soup.find_all(['p', 'li']):
             # Jangan ambil teks dari elemen yang punya anak (hindari duplikasi)
             if element.find(['p', 'li']):
                 continue
                 
             text = element.get_text(strip=True)
-            if text and not self.is_junk(text):
+            if text and len(text) > 10 and not self.is_junk(text):
                 paragraphs.append(text)
         
         if not paragraphs:
             return None
 
-        # 5. Terapkan Start Marker (Tanda Pisah) pada paragraf pertama[cite: 1]
+        # Terapkan Start Marker (Tanda Pisah) pada paragraf pertama[cite: 1]
         # Contoh: "Bandung, 27 April 2026 — " akan dibuang[cite: 1]
         paragraphs[0] = self.clean_first_paragraph(paragraphs[0])
         

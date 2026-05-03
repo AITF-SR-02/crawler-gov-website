@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 class BaseStrategy:
     def __init__(self):
         # Kata kunci untuk menghentikan pengambilan teks
-        self.stop_words = ["Biro Komunikasi", "Sekretariat Jenderal", "Laman:", "X:", "Instagram:", "#", "Foto:", "Sumber:"]
+        self.stop_words = ["Biro Komunikasi", "Sekretariat Jenderal", "Laman:", "X:", "Instagram:", "Foto:", "Sumber:"]
         # Regex untuk menghapus lokasi & tanggal hingga tanda pisah
         self.dash_pattern = re.compile(r'^.*?[ \-\u2013\u2014]\s*')
 
